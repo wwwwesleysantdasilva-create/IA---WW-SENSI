@@ -79,8 +79,44 @@ const checkLimits = (uid) => {
   return true;
 };
 
+let activeModel = GEMINI_MODEL;
+let modelAutoPicked = false;
+
+// Se o modelo configurado não existir mais, procura outro disponível na sua chave.
+// Prefere versões "flash-lite" (mais leves e com mais chance de serem grátis).
+const pickModel = async () => {
+  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200", {
+    headers: { "x-goog-api-key": GEMINI_API_KEY }
+  });
+  if (!res.ok) {
+    throw new Error(`Não consegui listar os modelos: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+  }
+
+  const data = await res.json();
+  const names = (data.models || [])
+    .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
+    .map((m) => m.name.replace("models/", ""));
+
+  console.log("📋 Modelos flash disponíveis:", names.filter((n) => n.includes("flash")).join(", ") || "nenhum");
+
+  const parse = (n) => {
+    const m = n.match(/^gemini-(\d+(?:\.\d+)?)-flash(-lite)?$/);
+    return m ? { v: parseFloat(m[1]), lite: !!m[2] } : null;
+  };
+
+  const cands = names
+    .map((n) => ({ n, p: parse(n) }))
+    .filter((x) => x.p)
+    .sort((a, b) => b.p.lite - a.p.lite || b.p.v - a.p.v);
+
+  if (!cands.length) throw new Error("Nenhum modelo flash disponível para esta chave.");
+
+  activeModel = cands[0].n;
+  console.log(`🔁 Usando o modelo: ${activeModel}`);
+};
+
 const askGemini = async (items, tries = 0) => {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent`;
 
   const res = await fetch(url, {
     method: "POST",
@@ -96,6 +132,14 @@ const askGemini = async (items, tries = 0) => {
   if (res.status === 429 && tries < 2) {
     await sleep(3000 * (tries + 1));
     return askGemini(items, tries + 1);
+  }
+
+  // Modelo não encontrado: procura outro disponível e tenta de novo (uma vez)
+  if (res.status === 404 && !modelAutoPicked) {
+    modelAutoPicked = true;
+    console.warn(`⚠️ Modelo "${activeModel}" não encontrado. Procurando outro...`);
+    await pickModel();
+    return askGemini(items, tries);
   }
 
   if (!res.ok) {
@@ -118,8 +162,16 @@ const client = new Client({
   ]
 });
 
-client.once(Events.ClientReady, (c) => {
-  console.log(`🤖 Assistente online como ${c.user.tag} | modelo: ${GEMINI_MODEL}`);
+client.once(Events.ClientReady, async (c) => {
+  console.log(`🤖 Assistente online como ${c.user.tag} | modelo: ${activeModel}`);
+
+  // Teste rápido do Gemini ao ligar: mostra no console se a chave/modelo estão OK
+  try {
+    const out = await askGemini([{ role: "user", text: "Responda apenas: ok" }]);
+    console.log(`✅ Gemini OK (${activeModel}): ${out.slice(0, 60)}`);
+  } catch (e) {
+    console.error("❌ TESTE DO GEMINI FALHOU:", e.message);
+  }
 });
 
 client.on(Events.MessageCreate, async (msg) => {
