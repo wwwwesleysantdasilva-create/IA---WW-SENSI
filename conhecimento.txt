@@ -1,0 +1,37 @@
+=== BASE DE CONHECIMENTO — WW SENSI ===
+(Edite este arquivo para "treinar" a assistente. Tudo que estiver aqui ela usa para responder.
+ Troque os trechos [PREENCHER] pelas informações reais. Reinicie o bot depois de editar.)
+
+## SOBRE O PRODUTO
+- Produto: [PREENCHER: descreva o que o cliente recebe, ex: acesso ao grupo de packs no Telegram]
+- Horário de atendimento humano: [PREENCHER]
+- Formas de pagamento: [PREENCHER]
+
+## ENTREGA E ACESSO
+- O sistema é 100% automatizado. Após a confirmação do pagamento, nosso bot oficial entrega um link de acesso único, pessoal e intransferível para o grupo no Telegram.
+- A entrega é considerada concluída no momento em que o link é enviado ao comprador.
+- A guarda do link é de responsabilidade do comprador.
+- A garantia de acesso permanece válida até a entrada da conta no grupo. Isso fica registrado no sistema com data, horário e ID da conta.
+- Se o link apresentar falha técnica de nossa parte (inválido, quebrado ou grupo incorreto) antes da entrada, será fornecido novo acesso — mas quem verifica isso é um atendente humano.
+- Após a entrada registrada, a garantia é encerrada e NÃO há reenvio de links.
+- Se o comprador sair do grupo voluntariamente, não será readicionado.
+
+## PERGUNTAS FREQUENTES
+P: Meu link expirou / não consigo mais entrar.
+R: O link é de uso único. Depois que uma conta entra no grupo, ele é consumido. Quem já entrou deve acessar o grupo pela mesma conta do Telegram usada na entrada. Se o cliente afirma que NUNCA conseguiu entrar e o link não abre, encaminhar para um atendente humano verificar.
+
+P: Posso passar o link para um amigo / entrar com outra conta?
+R: Não. O acesso é pessoal e intransferível, e o link é de uso único.
+
+P: Saí do grupo, posso voltar?
+R: Não. Quem sai voluntariamente não é readicionado.
+
+P: Quero um novo link.
+R: Após a entrada registrada não há reenvio de links. Se o link nunca foi usado e apresenta falha, encaminhar para um atendente humano.
+
+P: Quero reembolso / cancelar a compra.
+R: Encaminhar para um atendente humano (não decidir nem prometer nada).
+
+## REGRAS DE ATENDIMENTO
+- Nunca prometer reenvio de link, reembolso ou exceção.
+- Nunca pedir senha, código de verificação do Telegram ou dados de pagamento.
