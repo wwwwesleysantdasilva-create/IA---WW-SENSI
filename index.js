@@ -1,3 +1,4 @@
+
 import { Client, Events, GatewayIntentBits, PermissionsBitField } from "discord.js";
 import { readFileSync } from "node:fs";
 
@@ -24,7 +25,7 @@ const MAX_MSGS_PER_HOUR = 30; // limite por cliente
 const COOLDOWN_MS = 2500; // espera mínima entre mensagens do mesmo cliente
 const HISTORY_LIMIT = 8; // mensagens lembradas por cliente
 const HISTORY_TTL_MS = 30 * 60 * 1000; // esquece a conversa após 30 min
-const INACTIVITY_REMINDER_MS = 60 * 1000; // 1 minuto sem resposta -> pergunta se precisa de mais algo
+const INACTIVITY_REMINDER_MS = 60 * 1000; // 1 minuto sem mensagem -> pergunta se precisa de mais algo
 const CONCLUSION_WAIT_MS = 5 * 60 * 1000; // 5 minutos após perguntar/marcar o cliente -> marca como concluído para a Staff
 
 if (!DISCORD_TOKEN || !GEMINI_API_KEY) {
@@ -42,7 +43,7 @@ REGRAS:
 1. Responda SOMENTE com base na BASE DE CONHECIMENTO abaixo. Nunca invente informações, preços, prazos ou políticas.
 2. Você NÃO gera, NÃO envia e NÃO promete links de acesso. Você não tiene acesso a pedidos, pagamentos nem logs.
 3. Nunca prometa reembolso, reenvio de link ou exceções. Apenas explique as regras com firmeza e educação.
-4. EMOJIS SEM REPETIÇÃO: nunca use emojis comuns do teclado. Use SOMENTE os tokens abaixo, escritos entre chaves, que viram os emojis da marca: {aperto} para saudação ou conclusão; {link} para links; {pacote} para packs e produtos; {relogio} para horários e prazos; {pessoa} para conta, perfil e usuário; {papel} para ID do pedido, comprovante e termos. Use NO MÁXIMO 1 token por mensagem, apenas no início da resposta. Nunca repita emojis em várias linhas.
+4. EMOJIS: O padrão é responder sem emojis. Nunca use emojis comuns do teclado. Quando realmente fizer sentido, use SOMENTE os tokens abaixo, escritos entre chaves, que viram os emojis da marca: {aperto} para saudação ou conclusão; {link} para links; {pacote} para packs e produtos; {relogio} para horários e prazos; {pessoa} para conta, perfil e usuário; {papel} para ID do pedido, comprovante e termos. Use NO MÁXIMO 1 token por mensagem, apenas no início da resposta. Não use emojis decorativos nem repita emojis.
 5. DOMÍNIO E RESOLUÇÃO: Assuma o controle da conversa do início ao fim. Faça UMA pergunta direta de diagnóstico por vez se precisar, passe instruções claras em etapas curtas ("Faça este passo agora e me confirme:") e conduza até resolver ou esgotar todas as opções da base. NUNCA sugira abrir ticket (o cliente já está em um ticket).
 6. Antes de dizer que o link expirou ou não funciona, descubra o que aconteceu: pergunte se o cliente já entrou no grupo com essa ou com outra conta do Telegram (o link é de uso único) e oriente a conferir a lista de conversas de todas as contas. Para pagamento feito sem entrega, conduza primeiro os passos da base para encontrar o link (mensagem privada do bot, caixa de solicitações/spam, e-mail).
 7. PROIBIDO CONCLUIR ANTES DA HORA: NUNCA use a tag [CONCLUIDO] enquanto estiver respondendo uma dúvida ou passando um passo a passo. Só escreva [CONCLUIDO] quando o cliente disser explicitamente que já resolveu, que deu tudo certo ou que não tem mais nenhuma dúvida.
@@ -398,7 +399,34 @@ const greeted = new Set();
 
 const isTicketThread = (ch) => !!ch?.isThread?.() && SUPPORT_CHANNEL_IDS.includes(ch.parentId);
 
-// Após 5 min sem o cliente responder após a IA perguntar, conclui o ticket para a Staff (sem deletar)
+// Após 1 minuto sem novas mensagens, pergunta se o cliente precisa de mais alguma coisa.
+// Se o cliente responder, o temporizador é cancelado e será iniciado novamente após a próxima resposta da IA.
+const scheduleInactivityReminder = (thread, clientUserId, historyItems, hKey) => {
+  const oldTimer = inactivityTimers.get(thread.id);
+  if (oldTimer) clearTimeout(oldTimer);
+
+  const timer = setTimeout(async () => {
+    inactivityTimers.delete(thread.id);
+    if (silenced.has(thread.id) || askedToConclude.has(thread.id)) return;
+
+    try {
+      askedToConclude.add(thread.id);
+      await thread.send({
+        content: applyEmojis(
+          `<@${clientUserId}> Precisa de mais alguma coisa ou posso ajudar em algo mais por aqui?`,
+          0
+        ),
+        allowedMentions: { users: [clientUserId], roles: [], parse: [] }
+      });
+      scheduleConclusionForStaff(thread, clientUserId, getHistory(hKey).items);
+    } catch (err) {}
+  }, INACTIVITY_REMINDER_MS);
+
+  inactivityTimers.set(thread.id, timer);
+};
+
+// Após 5 min sem resposta do cliente depois da pergunta de acompanhamento,
+// conclui o ticket para a Staff (sem deletar).
 const scheduleConclusionForStaff = (thread, clientUserId, historyItems) => {
   clearTicketTimers(thread.id);
 
@@ -469,7 +497,10 @@ client.on(Events.MessageCreate, async (msg) => {
   const mentioned = msg.mentions.has(client.user, { ignoreEveryone: true, ignoreRoles: true });
   if (!inSupportChannel && !mentioned) return;
 
-  if (ticket) clearTicketTimers(msg.channelId);
+  if (ticket) {
+    clearTicketTimers(msg.channelId);
+    askedToConclude.delete(msg.channelId);
+  }
 
   if (ticket) {
     const isStaff = !!STAFF_ROLE_ID && !!msg.member?.roles?.cache?.has(STAFF_ROLE_ID);
@@ -561,16 +592,6 @@ client.on(Events.MessageCreate, async (msg) => {
       reply += `\n\n${EMOJIS.papel} **Resumo para a Equipe:** ${textoResumo}\n${staffPing} Atendimento humano solicitado.`
         .replace(/\n\n\s+/, "\n\n")
         .trimEnd();
-    } else if (ticket && concluidoTag) {
-      allowedMentions.users = [msg.author.id];
-      if (!askedToConclude.has(msg.channelId)) {
-        askedToConclude.add(msg.channelId);
-        reply += `\n\n<@${msg.author.id}> Precisa de mais alguma coisa ou posso ajudar em algo mais?`;
-      } else if (!reply.includes(`<@${msg.author.id}>`)) {
-        reply = `<@${msg.author.id}> ${reply}`;
-      }
-    } else if (ticket) {
-      askedToConclude.delete(msg.channelId);
     }
 
     await msg.reply({ content: reply.slice(0, 1900), allowedMentions });
@@ -586,8 +607,6 @@ client.on(Events.MessageCreate, async (msg) => {
           severity: gravidade,
           topic: topicoIA
         });
-      } else if (concluidoTag) {
-        scheduleConclusionForStaff(msg.channel, msg.author.id, getHistory(hKey).items);
       } else if (n >= MAX_AI_REPLIES_PER_TICKET) {
         silenced.add(msg.channelId);
         await setThreadFinalName(msg.channel, {
@@ -598,24 +617,12 @@ client.on(Events.MessageCreate, async (msg) => {
         await msg.channel
           .send({ content: `${staffPing} A equipe humana vai assumir este atendimento.`.trim(), allowedMentions })
           .catch(() => {});
+      } else if (concluidoTag) {
+        // A pergunta de acompanhamento não é enviada junto com a resposta:
+        // aguarda 1 minuto completo sem novas mensagens no ticket.
+        scheduleInactivityReminder(msg.channel, msg.author.id, getHistory(hKey).items, hKey);
       } else {
-        const timer = setTimeout(async () => {
-          inactivityTimers.delete(msg.channelId);
-          if (silenced.has(msg.channelId)) return;
-          try {
-            askedToConclude.add(msg.channelId);
-            await msg.channel.send({
-              content: applyEmojis(
-                `{aperto} <@${msg.author.id}> Precisa de mais alguma coisa ou posso ajudar em algo mais por aqui?`,
-                1
-              ),
-              allowedMentions: { users: [msg.author.id], roles: [], parse: [] }
-            });
-            scheduleConclusionForStaff(msg.channel, msg.author.id, getHistory(hKey).items);
-          } catch (err) {}
-        }, INACTIVITY_REMINDER_MS);
-
-        inactivityTimers.set(msg.channelId, timer);
+        scheduleInactivityReminder(msg.channel, msg.author.id, getHistory(hKey).items, hKey);
       }
     }
   } catch (e) {
