@@ -177,7 +177,11 @@ client.once(Events.ClientReady, async (c) => {
 client.on(Events.MessageCreate, async (msg) => {
   if (msg.author.bot || !msg.guild) return;
 
-  const inSupportChannel = SUPPORT_CHANNEL_IDS.includes(msg.channelId);
+  // Também responde dentro de tópicos (threads) criados num canal de suporte
+  const parentId = msg.channel.isThread?.() ? msg.channel.parentId : null;
+  const inSupportChannel =
+    SUPPORT_CHANNEL_IDS.includes(msg.channelId) ||
+    (parentId && SUPPORT_CHANNEL_IDS.includes(parentId));
   const mentioned = msg.mentions.has(client.user, { ignoreEveryone: true, ignoreRoles: true });
   if (!inSupportChannel && !mentioned) return;
 
